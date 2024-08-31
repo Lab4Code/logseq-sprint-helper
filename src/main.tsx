@@ -35,7 +35,7 @@ function main() {
     zIndex: 11,
   });
 
-  const openIconName = "template-plugin-open";
+  const openIconName = "open-news-week-helper";
   logseq.App.registerUIItem("toolbar", {
     key: openIconName,
     template: `

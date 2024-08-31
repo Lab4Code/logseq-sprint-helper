@@ -1,5 +1,6 @@
 {
   "name": "lab4code-sprint-week-helper",
+  "description": "A helper tool for Lab4Code Sprint news week setup",
   "private": true,
   "version": "0.0.0",
   "main": "dist/index.html",
@@ -37,7 +38,8 @@
     "vite-plugin-logseq": "^1.1.2"
   },
   "logseq": {
-    "id": "_lab4code-sprint-week-helper",
+    "id": "logseq-lab4code-sprint-week-helper",
+    "title": "Lab4Code Sprint Week Helper",
     "icon": "./logo.svg"
   }
 }
