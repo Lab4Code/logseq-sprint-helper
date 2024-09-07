@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import { useAppVisible } from "./utils";
 import moment from "moment";
 import type { Block } from "./types/block";
+import { IBatchBlock } from "@logseq/libs/dist/LSPlugin.user";
 
 export type Root = Block[];
 
@@ -28,24 +29,79 @@ function Toolbar() {
     };
   }
   async function getWeekPage() {
-    const { endDate, sunday, saturday } = getWeekInfo();
+    const { sunday, saturday } = getWeekInfo();
     const pageName = `${sunday} - ${saturday}`;
     const page = await logseq.Editor.getPage(pageName);
     return page;
   }
   const handleNewNews = async () => {
-    console.log("new news");
+    const { sunday, saturday } = getWeekInfo();
+    let weekPage = await getWeekPage();
+    if (weekPage === null) {
+      console.log("creating page");
+      weekPage = await logseq.Editor.createPage(
+        `${sunday} - ${saturday}`,
+        {},
+        {
+          format: "markdown",
+          createFirstBlock: false,
+        }
+      );
+      if (weekPage === null) {
+        throw new Error("page not created");
+      }
+    }
+
+    const pageBlocks = await logseq.Editor.getPageBlocksTree(weekPage.uuid);
+    if (
+      pageBlocks.length === 0 ||
+      (pageBlocks.length === 1 &&
+        pageBlocks[0].content === "" &&
+        pageBlocks[0].children?.length === 0)
+    ) {
+      const newsTemplate = await logseq.Editor.getPage("Template/News");
+      if (!newsTemplate) throw new Error("Template not found");
+      const newsPageBlocks = await logseq.Editor.getPageBlocksTree(
+        newsTemplate.uuid
+      );
+      for (let i = 0; i < newsPageBlocks.length; i++) {
+        const content = newsPageBlocks[i].content
+          .split("\n")
+          .filter((c) => !c.includes("template"))
+          .join("\n");
+
+        const createdBlock = await logseq.Editor.appendBlockInPage(
+          weekPage.uuid,
+          content
+        );
+
+        const children = newsPageBlocks[i].children;
+        if (createdBlock && children) {
+          for (let j = 0; j < children.length; j++) {
+            const child = children[j] as unknown as IBatchBlock;
+            const childContent = child.content;
+            if (!childContent) throw new Error("child content error");
+            logseq.Editor.appendBlockInPage(weekPage.uuid, childContent, {
+              properties: child.properties,
+            });
+          }
+        }
+      }
+    }
+
+    await handleDynamicTemplate();
+
+    await logseq.Editor.selectBlock(weekPage.uuid);
   };
   const handleDynamicTemplate = async () => {
-    console.log("dynamic template");
     const { endDate } = getWeekInfo();
 
     const page = await getWeekPage();
+    console.log("Page", page);
 
     if (!page) throw new Error("page not found");
 
     const pageBlocksTree = await logseq.Editor.getPageBlocksTree(page.uuid);
-    console.log(pageBlocksTree);
 
     const rootBlock = pageBlocksTree[0]!;
     if (!rootBlock) throw new Error("block error");
@@ -71,6 +127,7 @@ function Toolbar() {
         await logseq.Editor.updateBlock(uuid, newContent);
       }
     }
+    console.log("dynamic template");
   };
   const handleTopics = async () => {
     console.log("topics");
@@ -140,6 +197,8 @@ function Toolbar() {
     for (const option of selectedOptions) {
       await option.handler();
     }
+
+    console.log("submit");
   };
 
   const handleClose = () => {
@@ -160,12 +219,12 @@ function Toolbar() {
       >
         <div
           ref={innerRef}
-          className="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-7xl mx-auto bg-white p-4"
+          className="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-7xl mx-auto bg-black text-white p-4"
         >
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {options.map((option) => (
               <fieldset key={option.id} className="border rounded-lg p-2">
-                <legend className="text-sm font-semibold leading-6 text-gray-900">
+                <legend className="text-sm font-semibold leading-6">
                   {option.name}
                 </legend>
                 <div className="flex items-center">
@@ -178,11 +237,16 @@ function Toolbar() {
                       updateOptions(option);
                     }}
                     type="checkbox"
-                    className="w-4 h-4 text-black bg-gray-100 border-gray-300 rounded focus:ring-0 disabled:bg-gray-300 cursor-pointer disabled:cursor-not-allowed"
+                    className="w-4 h-4 text-green-500 bg-black border-gray-300 rounded focus:ring-0 disabled:border-gray-500 cursor-pointer disabled:cursor-not-allowed"
                   />
                   <label
                     htmlFor={option.id}
-                    className="ms-2 text-sm leading-6 text-gray-600"
+                    className={
+                      "ms-2 text-sm leading-6 " +
+                      (isOptionDisabled(option)
+                        ? "text-gray-500"
+                        : "text-white")
+                    }
                   >
                     {option.descrption}
                   </label>
