@@ -38,7 +38,6 @@ function Toolbar() {
     const { sunday, saturday } = getWeekInfo();
     let weekPage = await getWeekPage();
     if (weekPage === null) {
-      console.log("creating page");
       weekPage = await logseq.Editor.createPage(
         `${sunday} - ${saturday}`,
         {},
@@ -81,23 +80,18 @@ function Toolbar() {
             const child = children[j] as unknown as IBatchBlock;
             const childContent = child.content;
             if (!childContent) throw new Error("child content error");
-            logseq.Editor.appendBlockInPage(weekPage.uuid, childContent, {
-              properties: child.properties,
-            });
+            logseq.Editor.appendBlockInPage(weekPage.uuid, childContent);
           }
         }
       }
     }
-
     await handleDynamicTemplate();
-
     await logseq.Editor.selectBlock(weekPage.uuid);
   };
   const handleDynamicTemplate = async () => {
     const { endDate } = getWeekInfo();
 
     const page = await getWeekPage();
-    console.log("Page", page);
 
     if (!page) throw new Error("page not found");
 
@@ -106,7 +100,10 @@ function Toolbar() {
     const rootBlock = pageBlocksTree[0]!;
     if (!rootBlock) throw new Error("block error");
 
-    const days = rootBlock.children as unknown as Root;
+    const days =
+      rootBlock.children?.length ?? 0 > 0
+        ? (rootBlock.children as unknown as Root)
+        : (pageBlocksTree as unknown as Root);
     if (!days) throw new Error("days error");
 
     let index = 0;
@@ -114,7 +111,7 @@ function Toolbar() {
       const uuid = day.uuid;
       const content = day.content;
       if (!content) throw new Error("content error");
-      if (!content.includes("Good News")) {
+      if (!content.includes("Good News") && content.includes("###")) {
         const dayDate = endDate
           .clone()
           .subtract(index, "days")
@@ -127,7 +124,6 @@ function Toolbar() {
         await logseq.Editor.updateBlock(uuid, newContent);
       }
     }
-    console.log("dynamic template");
   };
   const handleTopics = async () => {
     console.log("topics");
@@ -149,15 +145,15 @@ function Toolbar() {
       notCompatibleWith: ["new-news"],
       handler: handleDynamicTemplate,
     },
-    {
-      id: "topics",
-      name: "Topics",
-      descrption:
-        "Try to get the topics from the text by semantically analyzing it",
-      active: false,
-      notCompatibleWith: ["new-news"],
-      handler: handleTopics,
-    },
+    // {
+    //   id: "topics",
+    //   name: "Topics",
+    //   descrption:
+    //     "Try to get the topics from the text by semantically analyzing it",
+    //   active: false,
+    //   notCompatibleWith: ["new-news"],
+    //   handler: handleTopics,
+    // },
   ];
   const innerRef = useRef<HTMLDivElement>(null);
   const [options, setOptions] = React.useState(defaultOptions);
@@ -197,8 +193,6 @@ function Toolbar() {
     for (const option of selectedOptions) {
       await option.handler();
     }
-
-    console.log("submit");
   };
 
   const handleClose = () => {
@@ -256,7 +250,7 @@ function Toolbar() {
             <div className="mt-6 flex items-center justify-end gap-x-6">
               <button
                 type="button"
-                className="text-sm font-semibold leading-6 text-gray-900"
+                className="rounded-md border border-gray-600 px-3 py-2 text-sm font-semibold text-gray-600 shadow-sm hover:bg-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600"
                 onClick={handleClose}
               >
                 Cancel
