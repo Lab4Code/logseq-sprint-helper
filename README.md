@@ -1,5 +1,13 @@
 # How to use
-- Install and activate
+
+## Installation
+
+Download the zip file containing all source files.
+
+In `Settings -> Advanced` activate `Developer Mode`. 
+
+Now you can install the plugin after unpacking the zip file in the `Plugins` panel by clicking on `Load unpacked plugin`
+
 - Go to a news site using the template, the format of the page name should be "DD.MM.YYYY - DD.MM.YYYY"
 ```md
   template:: news
