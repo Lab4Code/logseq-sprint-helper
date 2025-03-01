@@ -4,11 +4,12 @@
 
 Download the zip file containing all source files.
 
-In `Settings -> Advanced` activate `Developer Mode`. 
+In `Settings -> Advanced` activate `Developer Mode`.
 
 Now you can install the plugin after unpacking the zip file in the `Plugins` panel by clicking on `Load unpacked plugin`
 
 - Go to a news site using the template, the format of the page name should be "DD.MM.YYYY - DD.MM.YYYY"
+
 ```md
   template:: news
   page-type:: news
@@ -31,5 +32,6 @@ Now you can install the plugin after unpacking the zip file in the `Plugins` pan
 	  background-color:: gray
 	- ### **Sun, **
 ```
+
 - Click on the extension icon
 - Run the helper.

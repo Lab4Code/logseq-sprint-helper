@@ -1,209 +1,51 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useAppVisible } from "./utils";
 import moment from "moment";
 import type { Block } from "./types/block";
-import { IBatchBlock } from "@logseq/libs/dist/LSPlugin.user";
+import { handleNewNews, getWeekOptions } from "./logseq/news";
 
 export type Root = Block[];
 
-type Option = {
-  id: string;
-  name: string;
-  descrption: string;
-  active: boolean;
-  notCompatibleWith?: string[];
-  handler: () => Promise<void>;
-};
-
 function Toolbar() {
-  function getWeekInfo() {
-    const startDate = moment().weekday(1).subtract(1, "days");
-    const endDate = moment().weekday(6);
-    const sunday = startDate.format("DD.MM.YYYY");
-    const saturday = endDate.format("DD.MM.YYYY");
-    return {
-      startDate,
-      endDate,
-      sunday,
-      saturday,
-    };
-  }
-  async function getWeekPage() {
-    const { sunday, saturday } = getWeekInfo();
-    const pageName = `${sunday} - ${saturday}`;
-    const page = await logseq.Editor.getPage(pageName);
-    return page;
-  }
-  const handleNewNews = async () => {
-    const { sunday, saturday } = getWeekInfo();
-    let weekPage = await getWeekPage();
-    if (weekPage === null) {
-      weekPage = await logseq.Editor.createPage(
-        `${sunday} - ${saturday}`,
-        {},
-        {
-          format: "markdown",
-          createFirstBlock: false,
-        }
-      );
-      if (weekPage === null) {
-        throw new Error("page not created");
-      }
-    }
-
-    const pageBlocks = await logseq.Editor.getPageBlocksTree(weekPage.uuid);
-    if (
-      pageBlocks.length === 0 ||
-      (pageBlocks.length === 1 &&
-        pageBlocks[0].content === "" &&
-        pageBlocks[0].children?.length === 0)
-    ) {
-      const newsTemplate = await logseq.Editor.getPage("Template/News");
-      if (!newsTemplate) throw new Error("Template not found");
-      const newsPageBlocks = await logseq.Editor.getPageBlocksTree(
-        newsTemplate.uuid
-      );
-      for (let i = 0; i < newsPageBlocks.length; i++) {
-        const content = newsPageBlocks[i].content
-          .split("\n")
-          .filter((c) => !c.includes("template"))
-          .join("\n");
-
-        const createdBlock = await logseq.Editor.appendBlockInPage(
-          weekPage.uuid,
-          content
-        );
-
-        const children = newsPageBlocks[i].children;
-        if (createdBlock && children) {
-          for (let j = 0; j < children.length; j++) {
-            const child = children[j] as unknown as IBatchBlock;
-            const childContent = child.content;
-            if (!childContent) throw new Error("child content error");
-            logseq.Editor.appendBlockInPage(weekPage.uuid, childContent);
-          }
-        }
-      }
-    }
-    await handleDynamicTemplate();
-    await logseq.Editor.selectBlock(weekPage.uuid);
-  };
-  const handleDynamicTemplate = async () => {
-    const { endDate } = getWeekInfo();
-
-    const page = await getWeekPage();
-
-    if (!page) throw new Error("page not found");
-
-    const pageBlocksTree = await logseq.Editor.getPageBlocksTree(page.uuid);
-
-    const rootBlock = pageBlocksTree[0]!;
-    if (!rootBlock) throw new Error("block error");
-
-    const days =
-      rootBlock.children?.length ?? 0 > 0
-        ? (rootBlock.children as unknown as Root)
-        : (pageBlocksTree as unknown as Root);
-    if (!days) throw new Error("days error");
-
-    let index = 0;
-    for (const day of days) {
-      const uuid = day.uuid;
-      const content = day.content;
-      if (!content) throw new Error("content error");
-      if (!content.includes("Good News") && content.includes("###")) {
-        const dayDate = endDate
-          .clone()
-          .subtract(index, "days")
-          .format("DD.MM.YYYY");
-        if (content.includes(dayDate)) {
-          throw new Error("already updated");
-        }
-        const newContent = content.replace(/(\w+), /, `[[\$1, ${dayDate}]]`);
-        index++;
-        await logseq.Editor.updateBlock(uuid, newContent);
-      }
-    }
-  };
-  const handleTopics = async () => {
-    console.log("topics");
-  };
-  const defaultOptions: Option[] = [
-    {
-      id: "new-news",
-      name: "New News",
-      descrption: "Create a new news page for the current week, if missing",
-      active: false,
-      notCompatibleWith: ["dynamic-template", "topics"],
-      handler: handleNewNews,
-    },
-    {
-      id: "dynamic-template",
-      name: "Dynamic Template",
-      descrption: "Fixes the dates from the template if the template is used",
-      active: false,
-      notCompatibleWith: ["new-news"],
-      handler: handleDynamicTemplate,
-    },
-    // {
-    //   id: "topics",
-    //   name: "Topics",
-    //   descrption:
-    //     "Try to get the topics from the text by semantically analyzing it",
-    //   active: false,
-    //   notCompatibleWith: ["new-news"],
-    //   handler: handleTopics,
-    // },
-  ];
   const innerRef = useRef<HTMLDivElement>(null);
-  const [options, setOptions] = React.useState(defaultOptions);
+  const [relativeWeekOffset, setRelativeWeekOffset] = useState<number>(0); // 0 = current week
+  const [weekOptions, setWeekOptions] = useState<
+    { value: number; label: string; isCurrentWeek: boolean }[]
+  >([]);
   const visible = useAppVisible();
-  function isOptionDisabled(option: Option) {
-    const notCompatibleOptions = options.filter(
-      (o) => o.notCompatibleWith?.includes(option.id) && o.active
-    );
-    if (notCompatibleOptions.length > 0) {
-      return true;
-    }
-    return false;
-  }
 
-  function updateOptions(option: Option) {
-    const newOptions = options.map((o) => {
-      const notCompatibleOptions = options.filter(
-        (o) => o.notCompatibleWith?.includes(option.id) && o.active
-      );
-      if (notCompatibleOptions.length > 0) {
-        return o;
-      } else if (o.id === option.id) {
-        o.active = !o.active;
-      }
-      return o;
-    });
-    setOptions(newOptions);
-  }
+  // Load week options when component mounts
+  useEffect(() => {
+    // Get week options from news.ts helper function
+    const options = getWeekOptions(12); // 12 weeks before and after current
+    setWeekOptions(options);
+
+    // Pre-select current week (value 0)
+    setRelativeWeekOffset(0);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const selectedOptions = options.filter((o) => o.active);
-    if (selectedOptions.length === 0) {
-      return;
-    }
-    for (const option of selectedOptions) {
-      await option.handler();
+    try {
+      await handleNewNews(relativeWeekOffset);
+    } catch (error) {
+      console.error("Error creating/updating news page:", error);
+    } finally {
+      handleClose();
     }
   };
 
   const handleClose = () => {
-    setOptions(defaultOptions);
+    // Reset to current week when closing
+    setRelativeWeekOffset(0);
     window.logseq.hideMainUI();
   };
 
   if (visible) {
     return (
       <main
-        className="backdrop-filter backdrop-blur-md fixed inset-0 flex items-center justify-center"
+        className="backdrop-filter backdrop-blur-md fixed inset-0 flex items-center justify-center z-50"
         onClick={(e) => {
           const current = innerRef.current;
           if (current !== null && !current.contains(e.target as any)) {
@@ -213,53 +55,66 @@ function Toolbar() {
       >
         <div
           ref={innerRef}
-          className="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-7xl mx-auto bg-black text-white p-4"
+          className="bg-yellow-300 border-[4px] border-black rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] w-full max-w-md mx-auto p-6"
         >
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {options.map((option) => (
-              <fieldset key={option.id} className="border rounded-lg p-2">
-                <legend className="text-sm font-semibold leading-6">
-                  {option.name}
-                </legend>
-                <div className="flex items-center">
-                  <input
-                    id={option.id}
-                    name={option.id}
-                    checked={option.active}
-                    disabled={isOptionDisabled(option)}
-                    onChange={(e) => {
-                      updateOptions(option);
-                    }}
-                    type="checkbox"
-                    className="w-4 h-4 text-green-500 bg-black border-gray-300 rounded focus:ring-0 disabled:border-gray-500 cursor-pointer disabled:cursor-not-allowed"
-                  />
-                  <label
-                    htmlFor={option.id}
-                    className={
-                      "ms-2 text-sm leading-6 " +
-                      (isOptionDisabled(option)
-                        ? "text-gray-500"
-                        : "text-white")
-                    }
-                  >
-                    {option.descrption}
-                  </label>
-                </div>
-              </fieldset>
-            ))}
-            <div className="mt-6 flex items-center justify-end gap-x-6">
+          <h2 className="text-2xl font-black mb-5 text-center uppercase tracking-tight">
+            News Week Helper
+          </h2>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <div className="bg-white border-[3px] border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+              <label className="block text-base font-black uppercase mb-2 text-black">
+                Select Week
+              </label>
+              <select
+                value={relativeWeekOffset}
+                onChange={(e) => setRelativeWeekOffset(Number(e.target.value))}
+                className="w-full border-[3px] border-black rounded-none p-2 
+                           font-bold appearance-none bg-blue-100
+                           focus:outline-none focus:ring-0 focus:border-black"
+                style={{
+                  backgroundImage:
+                    'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23000000%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")',
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 0.7rem top 50%",
+                  backgroundSize: "0.7rem auto",
+                }}
+              >
+                {weekOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-3 text-sm font-bold border-l-4 border-black pl-2 py-1">
+                Creates or updates a news page for the selected week.
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3">
               <button
                 type="button"
-                className="rounded-md border border-gray-600 px-3 py-2 text-sm font-semibold text-gray-600 shadow-sm hover:bg-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600"
+                className="px-5 py-2 text-base font-bold bg-white border-[3px] border-black 
+                          shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] uppercase
+                          hover:translate-y-[1px] hover:translate-x-[1px] 
+                          hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]
+                          active:translate-y-[3px] active:translate-x-[3px] active:shadow-none
+                          transition-all duration-100"
                 onClick={handleClose}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                className="px-5 py-2 text-base font-bold text-white bg-blue-500 border-[3px] border-black 
+                          shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] uppercase
+                          hover:translate-y-[1px] hover:translate-x-[1px] 
+                          hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]
+                          active:translate-y-[3px] active:translate-x-[3px] active:shadow-none
+                          transition-all duration-100"
               >
-                Submit
+                Create Page
               </button>
             </div>
           </form>
